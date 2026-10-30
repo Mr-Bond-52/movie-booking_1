@@ -1,0 +1,46 @@
+@page "/my-bookings"
+@inject DataStore Db
+@functions {
+    [BindProperty(SupportsGet = true)] public string Email { get; set; }
+}
+@{
+    ViewData["Title"] = "My bookings";
+    var list = string.IsNullOrWhiteSpace(Email) ? null : Db.BookingsByEmail(Email.Trim());
+}
+
+<h1>My bookings</h1>
+<form method="get" class="inline-form">
+    <label>Email used for booking <input type="email" name="email" value="@Email" required /></label>
+    <button type="submit" class="btn">Show bookings</button>
+</form>
+
+@if (list == null)
+{
+    <p class="notice">Enter the email address you used while booking to see your tickets.</p>
+}
+else if (!list.Any())
+{
+    <p class="notice">No bookings found for @Email. <a href="/">Browse movies</a></p>
+}
+else
+{
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Booking ID</th><th>Movie</th><th>Theatre</th><th>Date</th><th>Showtime</th><th>Seats</th><th class="num">Amount</th></tr></thead>
+            <tbody>
+            @foreach (var b in list)
+            {
+                <tr>
+                    <td><a href="/confirmation/@b.Id">@b.Id</a></td>
+                    <td>@b.MovieTitle</td>
+                    <td>@b.TheatreName</td>
+                    <td>@b.ShowTime.ToString("dd MMM yyyy")</td>
+                    <td>@b.ShowTime.ToString("hh:mm tt")</td>
+                    <td>@string.Join(", ", b.Seats)</td>
+                    <td class="num">₹@b.Amount.ToString("0")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

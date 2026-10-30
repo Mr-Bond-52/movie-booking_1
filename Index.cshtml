@@ -1,0 +1,46 @@
+@page
+@inject DataStore Db
+@functions {
+    [BindProperty(SupportsGet = true)] public string Q { get; set; }
+    [BindProperty(SupportsGet = true)] public string Lang { get; set; }
+}
+@{
+    ViewData["Title"] = "Movies";
+    var all = Db.SearchMovies(Q, Lang);
+    var nowShowing = all.Where(m => m.IsReleased).ToList();
+    var comingSoon = all.Where(m => !m.IsReleased).OrderBy(m => m.ReleaseDate).ToList();
+}
+
+<div class="filters">
+    <span>Language</span>
+    <a class="chip @(string.IsNullOrEmpty(Lang) ? "active" : "")" href="@Url.Page("/Index", new { q = Q })">All</a>
+    @foreach (var l in Db.Languages())
+    {
+        <a class="chip @(l == Lang ? "active" : "")" href="@Url.Page("/Index", new { q = Q, lang = l })">@l</a>
+    }
+</div>
+
+@if (!all.Any())
+{
+    <p class="notice">No movies match your search. Try a different title, genre or language.</p>
+}
+
+@if (nowShowing.Any())
+{
+    <section>
+        <h2 class="section-title">Now Showing</h2>
+        <div class="movie-grid">
+            @foreach (var m in nowShowing) { <partial name="_MovieCard" model="m" /> }
+        </div>
+    </section>
+}
+
+@if (comingSoon.Any())
+{
+    <section>
+        <h2 class="section-title">Coming Soon</h2>
+        <div class="movie-grid">
+            @foreach (var m in comingSoon) { <partial name="_MovieCard" model="m" /> }
+        </div>
+    </section>
+}

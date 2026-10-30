@@ -1,0 +1,90 @@
+@page "/movie/{id:int}"
+@inject DataStore Db
+@functions {
+    public Movie Movie { get; set; }
+    public List<DateOnly> Dates { get; set; }
+    public DateOnly SelectedDate { get; set; }
+    public List<TheatreShows> Groups { get; set; }
+
+    [BindProperty(SupportsGet = true)] public DateOnly? Date { get; set; }
+
+    public IActionResult OnGet(int id)
+    {
+        Movie = Db.GetMovie(id);
+        if (Movie == null) return NotFound();
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        Dates = Enumerable.Range(0, 7).Select(i => today.AddDays(i)).ToList();
+        SelectedDate = Date.HasValue && Dates.Contains(Date.Value) ? Date.Value : today;
+
+        Groups = Db.ShowsForMovie(id)
+            .Where(s => DateOnly.FromDateTime(s.StartTime) == SelectedDate && s.StartTime > DateTime.Now)
+            .GroupBy(s => s.TheatreId)
+            .Select(g => new TheatreShows { Theatre = Db.GetTheatre(g.Key), Shows = g.OrderBy(s => s.StartTime).ToList() })
+            .Where(g => g.Theatre != null)
+            .OrderBy(g => g.Theatre.Name)
+            .ToList();
+        return Page();
+    }
+}
+@{ ViewData["Title"] = Movie.Title; }
+
+<div class="detail">
+    <div class="detail-poster"><partial name="_Poster" model="Movie" /></div>
+    <div class="detail-info">
+        <h1>@Movie.Title</h1>
+        <p class="tags">
+            <span>@Movie.RatingText</span>
+            <span>@Movie.Genre</span>
+            <span>@Movie.Language</span>
+            <span>@Movie.DurationText</span>
+        </p>
+        <p class="description">@Movie.Description</p>
+        <dl class="facts">
+            <dt>Director</dt><dd>@Movie.Director</dd>
+            <dt>Cast</dt><dd>@Movie.Cast</dd>
+            <dt>Release date</dt><dd>@Movie.ReleaseDate.ToString("dd MMM yyyy")</dd>
+        </dl>
+    </div>
+</div>
+
+<section>
+    <h2 class="section-title">Theatres and showtimes</h2>
+    <div class="date-tabs">
+        @foreach (var d in Dates)
+        {
+            <a class="@(d == SelectedDate ? "active" : "")" href="/movie/@Movie.Id?date=@d.ToString("yyyy-MM-dd")">
+                <small>@d.ToString("ddd")</small>
+                <strong>@d.ToString("dd MMM")</strong>
+            </a>
+        }
+    </div>
+
+    @if (!Groups.Any())
+    {
+        <p class="notice">@(Movie.IsReleased ? "No shows are scheduled for this date. Try another day." : "Booking opens closer to the release date.")</p>
+    }
+    else
+    {
+        <div class="theatre-list">
+            @foreach (var g in Groups)
+            {
+                <div class="theatre-row">
+                    <div class="theatre-name">
+                        <strong>@g.Theatre.Name</strong>
+                        <span class="muted">@g.Theatre.Location</span>
+                    </div>
+                    <div class="times">
+                        @foreach (var s in g.Shows)
+                        {
+                            <a class="showtime" href="/seats/@s.Id">
+                                <b>@s.StartTime.ToString("hh:mm tt")</b>
+                                <small>₹@s.Price.ToString("0")</small>
+                            </a>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</section>

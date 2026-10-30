@@ -1,0 +1,31 @@
+@page "/confirmation/{id}"
+@inject DataStore Db
+@functions {
+    public Booking Booking { get; set; }
+    public IActionResult OnGet(string id)
+    {
+        Booking = Db.GetBooking(id);
+        return Booking == null ? NotFound() : Page();
+    }
+}
+@{ ViewData["Title"] = "Booking confirmed"; }
+
+<section class="confirm">
+    <h1>Booking confirmed</h1>
+    <p>Thank you, @Booking.CustomerName. Your tickets are booked. Keep your booking ID handy and show it at the theatre.</p>
+    <p class="booking-id">Booking ID <strong>@Booking.Id</strong></p>
+
+    <dl class="facts">
+        <dt>Movie</dt><dd>@Booking.MovieTitle</dd>
+        <dt>Theatre</dt><dd>@Booking.TheatreName</dd>
+        <dt>Date</dt><dd>@Booking.ShowTime.ToString("dddd, dd MMM yyyy")</dd>
+        <dt>Showtime</dt><dd>@Booking.ShowTime.ToString("hh:mm tt")</dd>
+        <dt>Seats</dt><dd>@string.Join(", ", Booking.Seats) (@Booking.Seats.Count tickets)</dd>
+        <dt>Total amount</dt><dd><strong>₹@Booking.Amount.ToString("0")</strong></dd>
+    </dl>
+
+    <p>
+        <a class="btn" href="/">Book another movie</a>
+        <a class="btn btn-outline" href="@Url.Page("/MyBookings", new { email = Booking.Email })">View my bookings</a>
+    </p>
+</section>

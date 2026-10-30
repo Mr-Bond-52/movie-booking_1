@@ -1,0 +1,143 @@
+@page "/seats/{showId:int}"
+@inject DataStore Db
+@functions {
+    public Show Show { get; set; }
+    public Movie Movie { get; set; }
+    public Theatre Theatre { get; set; }
+    public HashSet<string> Booked { get; set; }
+    public List<string> Selected { get; set; } = new();
+    public string Error { get; set; }
+
+    // Selected seats live in the URL (?sel=A1,A2) so seat picking works with plain links, no scripting.
+    [BindProperty(SupportsGet = true)] public string Sel { get; set; }
+    [BindProperty] public string Name { get; set; }
+    [BindProperty] public string Email { get; set; }
+
+    bool Load(int showId)
+    {
+        Show = Db.GetShow(showId);
+        if (Show == null) return false;
+        Movie = Db.GetMovie(Show.MovieId);
+        Theatre = Db.GetTheatre(Show.TheatreId);
+        if (Movie == null || Theatre == null) return false;
+        Booked = Db.BookedSeats(showId);
+        Selected = (Sel ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => s.ToUpperInvariant())
+            .Where(DataStore.IsValidSeat)
+            .Where(s => !Booked.Contains(s))
+            .Distinct()
+            .Take(DataStore.MaxSeats)
+            .OrderBy(s => s[0]).ThenBy(s => int.Parse(s.Substring(1)))
+            .ToList();
+        return true;
+    }
+
+    public string SelectedCsv => string.Join(",", Selected);
+
+    string ToggleUrl(string seat)
+    {
+        var list = Selected.ToList();
+        if (!list.Remove(seat) && list.Count < DataStore.MaxSeats) list.Add(seat);
+        list = list.OrderBy(s => s[0]).ThenBy(s => int.Parse(s.Substring(1))).ToList();
+        return list.Count == 0 ? $"/seats/{Show.Id}" : $"/seats/{Show.Id}?sel={string.Join(",", list)}";
+    }
+
+    public IActionResult OnGet(int showId) => Load(showId) ? Page() : NotFound();
+
+    public IActionResult OnPost(int showId)
+    {
+        if (!Load(showId)) return NotFound();
+        if (Selected.Count == 0) { Error = "Select at least one seat."; return Page(); }
+        if (string.IsNullOrWhiteSpace(Name) || string.IsNullOrWhiteSpace(Email) || !Email.Contains('@'))
+        { Error = "Enter your name and a valid email address to confirm."; return Page(); }
+
+        var booking = Db.TryBook(showId, Name.Trim(), Email.Trim(), Selected, out var error);
+        if (booking == null)
+        {
+            Error = error;
+            Load(showId); // refresh seat availability
+            return Page();
+        }
+        return RedirectToPage("/Confirmation", new { id = booking.Id });
+    }
+}
+@{
+    ViewData["Title"] = "Select seats - " + Movie.Title;
+    var total = Selected.Count * Show.Price;
+    var available = DataStore.Rows * DataStore.Cols - Booked.Count;
+}
+
+<p class="breadcrumb"><a href="/">Movies</a> / <a href="/movie/@Movie.Id">@Movie.Title</a> / Seats</p>
+
+<div class="seat-page">
+    <section class="seat-panel">
+        <div class="show-head">
+            <h1>@Movie.Title</h1>
+            <p class="muted">@Theatre.Name, @Theatre.Location &ndash; @Show.StartTime.ToString("ddd, dd MMM yyyy") at @Show.StartTime.ToString("hh:mm tt")</p>
+        </div>
+
+        <div class="legend">
+            <span><i class="seat available"></i> Available (@available)</span>
+            <span><i class="seat selected"></i> Selected (@Selected.Count)</span>
+            <span><i class="seat booked"></i> Booked (@Booked.Count)</span>
+        </div>
+
+        <div class="seat-map">
+            @for (int r = 0; r < DataStore.Rows; r++)
+            {
+                var row = (char)('A' + r);
+                <div class="seat-row">
+                    <span class="row-label">@row</span>
+                    @for (int c = 1; c <= DataStore.Cols; c++)
+                    {
+                        var id = $"{row}{c}";
+                        var gap = c == DataStore.Cols / 2 ? "gap" : "";
+                        if (Booked.Contains(id))
+                        {
+                            <span class="seat booked @gap" title="@id is booked">@c</span>
+                        }
+                        else if (Selected.Contains(id))
+                        {
+                            <a class="seat selected @gap" href="@ToggleUrl(id)" title="Deselect @id">@c</a>
+                        }
+                        else
+                        {
+                            <a class="seat available @gap" href="@ToggleUrl(id)" title="Select @id">@c</a>
+                        }
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="screen"></div>
+        <p class="screen-label">Screen is this way</p>
+    </section>
+
+    <aside class="summary">
+        <h2>Your selection</h2>
+        <dl class="facts compact">
+            <dt>Price per ticket</dt><dd>₹@Show.Price.ToString("0")</dd>
+            <dt>Seats</dt><dd>@(Selected.Any() ? string.Join(", ", Selected) : "None selected")</dd>
+            <dt>Tickets</dt><dd>@Selected.Count</dd>
+        </dl>
+        <p class="total"><span>Total</span><strong>₹@total.ToString("0")</strong></p>
+
+        @if (Error != null) { <p class="error">@Error</p> }
+
+        @if (Selected.Any())
+        {
+            <form method="post" asp-page="/Seats" asp-route-showId="@Show.Id" class="form">
+                <input type="hidden" name="Sel" value="@SelectedCsv" />
+                <label>Name <input type="text" name="Name" value="@Name" required maxlength="80" /></label>
+                <label>Email <input type="email" name="Email" value="@Email" required maxlength="120" /></label>
+                <button type="submit" class="btn btn-block">Confirm Booking</button>
+            </form>
+            <a class="clear-link" href="/seats/@Show.Id">Clear selection</a>
+        }
+        else
+        {
+            <p class="muted">Choose up to @DataStore.MaxSeats seats from the layout.</p>
+            <span class="btn btn-block btn-disabled">Confirm Booking</span>
+        }
+    </aside>
+</div>
